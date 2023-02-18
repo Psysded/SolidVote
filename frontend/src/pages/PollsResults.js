@@ -1,10 +1,6 @@
 import {
     Box,
-    Button,
     Center,
-    FormControl,
-    FormLabel,
-    Input,
     Text,
     Flex,
     Card,
@@ -15,12 +11,8 @@ import {
     StatHelpText, StatArrow, Heading, CardBody, Divider
 } from '@chakra-ui/react';
 import Nav from "../components/Navigation/NavBar";
-import {useState} from "react";
-
 
 export default function PollsResults() {
-    const [name, setName] = useState("");
-
     return (
         <Box>
             <Nav/>

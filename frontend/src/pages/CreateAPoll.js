@@ -11,6 +11,8 @@ export default function CreateAPoll() {
     const [participants, setParticipants] = useState([]);
 
     function addParticipants() {
+        if (participant === "")
+            return;
         setParticipants((participants) => [...participants, participant]);
         console.log(participants);
         setParticipant("");
