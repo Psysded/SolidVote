@@ -22,6 +22,8 @@
     "@types/mocha": "^9.1.0",
     "axios": "^1.2.1",
     "chai": "^4.2.0",
+    "crypto-browserify": "^3.12.0",
+    "crypto-es": "^1.2.7",
     "ethers": "^5.7.2",
     "framer-motion": "^7.6.12",
     "hardhat-gas-reporter": "^1.0.8",
@@ -30,6 +32,7 @@
     "react-router-dom": "^6.4.3",
     "react-scripts": "5.0.1",
     "solidity-coverage": "^0.8.1",
+    "stream": "^0.0.2",
     "ts-node": ">=8.0.0",
     "typechain": "^8.1.0",
     "typescript": ">=4.5.0",
@@ -37,6 +40,7 @@
   },
   "scripts": {
     "start": "react-scripts start",
+    "prebuild": "chmod +x ./fix_crypto_dependency.sh; ./fix_crypto_dependency.sh",
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject"

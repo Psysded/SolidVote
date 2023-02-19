@@ -23,14 +23,8 @@ export default function Home() {
                         <Flex direction="row">
                             <Box w="50%" pr="5%">
                                 <Text fontSize="4xl">What is SolidVote ?</Text>
-                                <Text mt="10">Lorem ipsum dolor sit amet, consectetur adipiscing elit. Etiam purus nibh,
-                                    egestas ac tortor in, vestibulum condimentum dolor. Praesent porta vitae purus sed
-                                    scelerisque. In sapien ligula, mattis ut ex nec, mattis rutrum justo. Nullam dapibus
-                                    rutrum rutrum. Morbi sagittis et dui venenatis cursus. Ut ornare nibh vitae mauris
-                                    faucibus sollicitudin semper quis turpis. Proin massa arcu, fermentum vel interdum
-                                    in, ornare in eros. Suspendisse molestie molestie pharetra. Nulla eu sapien
-                                    tristique, commodo urna vestibulum, cursus ipsum. Morbi rhoncus sapien ut lectus
-                                    malesuada egestas. &</Text>
+                                <Text mt="10">
+                                SolidVotes is the most advanced blockchain voting platform, offering unparalleled security and privacy for all types of voting. Using our platform, you can vote safely and anonymously, without fear that your vote will be compromised or disclosed. Our zero-knowledge proof technology ensures that each vote is authentic and that each voter can only vote once. Whether you're a voter, a voting organizer, or an administrator, we have tailor-made solutions to help you achieve your goals. Join SolidVotes today to make your voice heard and support democracy.</Text>
                             </Box>
                             <Flex justifyContent="center" alignItems="center" w="50%" pl="5%">
                                 <Image htmlHeight="250px"
