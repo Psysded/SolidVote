@@ -12,11 +12,13 @@ import { ethers } from 'ethers';
 import {useEffect, useState} from "react";
 
 export default function ConnectToWalletButton() {
+    // CONNECT USER
     const [defaultAccount, setDefaultAccount] = useState("");
     const [userBalance, setUserBalance] = useState(null);
     let alert = <></>;
     let display = <></>;
 
+    // CHECK IF USER ALREADY CONNECTED
     useEffect(() => {
         if(!window.ethereum) return
 
@@ -25,6 +27,7 @@ export default function ConnectToWalletButton() {
         accountChangedHandler(signer, provider);
     })
 
+    // WALLET CONNECTION
     const connectWallet = async () => {
         if (window.ethereum) {
             try {
@@ -55,6 +58,7 @@ export default function ConnectToWalletButton() {
         setUserBalance(ethers.utils.formatEther(balance));
     };
 
+    // DIFFERENT DISPLAY IF CONNECTED OR NOT
     if (defaultAccount === "") {
         display = <Button mx="2" onClick={connectWallet}>Connect to Wallet</Button>;
     } else {

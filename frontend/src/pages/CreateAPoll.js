@@ -1,14 +1,53 @@
 import {
-    Box, Button, Center, FormControl, FormLabel, Input, Text, Flex, Heading
+    Box, Button, Center, FormControl, FormLabel, Input, Text, Flex, Heading, Alert, AlertIcon, AlertTitle
 } from '@chakra-ui/react';
 import Nav from "../components/Navigation/NavBar";
-import {useState} from "react";
+import {useEffect, useState} from "react";
+import {ethers} from "ethers";
+import {useNavigate} from "react-router-dom";
 
 
 export default function CreateAPoll() {
+    // CHECK IF CONNECTED
+    const [creatorAccount, setCreatorAccount] = useState("");
+    const navigate = useNavigate();
+    // NAME OF THE POLL
     const [name, setName] = useState("");
+    // NEW PARTICIPANT
     const [participant, setParticipant] = useState("");
+    // PARTICPANTS LISTS
     const [participants, setParticipants] = useState([]);
+    let alert = <></>;
+
+    // CHECK IF USER IS CONNECTED // REDIRECT IF NOT
+    useEffect(() => {
+        const fetchWallet = async () => {
+            if (window.ethereum) {
+                try {
+                    await window.ethereum.request({method: 'eth_requestAccounts'});
+                    const provider = new ethers.providers.Web3Provider(window.ethereum);
+                    const signer = provider.getSigner();
+                    const address = await signer.getAddress();
+                    setCreatorAccount(address);
+                } catch (err) {
+                    console.error(err);
+                    alert = <Alert status='error'>
+                        <AlertIcon/>
+                        <AlertTitle>{err.message}</AlertTitle>
+                    </Alert>;
+                    navigate("/");
+                }
+            } else {
+                console.error('Please install MetaMask to use this dApp!');
+                alert = <Alert status='error'>
+                    <AlertIcon />
+                    <AlertTitle>Please install MetaMask to use this dApp!</AlertTitle>
+                </Alert>;
+                navigate("/");
+            }
+        }
+        fetchWallet();
+    }, [])
 
     function addParticipants() {
         if (participant === "")
