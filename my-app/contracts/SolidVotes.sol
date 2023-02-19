@@ -4,9 +4,19 @@ pragma solidity ^0.8;
 import "@semaphore-protocol/contracts/interfaces/ISemaphoreVerifier.sol";
 import "@semaphore-protocol/contracts/base/SemaphoreGroups.sol";
 
+
 /// SolidVotes voting contract using Semaphore.
 /// It allows users to vote anonymously in a poll.
 /// The following code allows you to create polls, add voters and allow them to vote anonymously.
+
+
+
+// |----------------------------------------------------------------------------------------------|
+// ||||||||||||||||||||||||||||||||||| SolidVotes Interface |||||||||||||||||||||||||||||||||||||||
+// |----------------------------------------------------------------------------------------------|
+
+
+
 interface ISolidVoting {
     error Semaphore__CallerIsNotThePollCoordinator();
     error Semaphore__MerkleTreeDepthIsNotSupported();
@@ -35,7 +45,7 @@ interface ISolidVoting {
         uint256 endTimeStamp;
         string title;
         string[] options;
-        mapping(string => uint256) votesPerOption;
+        uint256[] votesPerOption;
     }
 
     /// @dev Emitted when a new poll is created.
@@ -47,7 +57,11 @@ interface ISolidVoting {
     /// @param pollId: Id of the poll.
     /// @param coordinator: Coordinator of the poll.
     /// @param endTimeStamp: Timestamp when the poll ends.
-    event PollStarted(uint256 pollId, address indexed coordinator, uint256 endTimeStamp);
+    event PollStarted(
+        uint256 pollId,
+        address indexed coordinator,
+        uint256 endTimeStamp
+    );
 
     /// @dev Emitted when a user votes on a poll.
     /// @param pollId: Id of the poll.
@@ -59,27 +73,41 @@ interface ISolidVoting {
     /// @param coordinator: Coordinator of the poll.
     event PollEnded(uint256 pollId, address indexed coordinator);
 
-    /// @dev Creates a poll and the associated Merkle tree/group.
-    /// @param pollId: Id of the poll.
-    /// @param coordinator: Coordinator of the poll.
-    /// @param merkleTreeDepth: Depth of the tree.
-    function createPoll(
-        uint256 pollId,
+    /// @dev adds a identity commitment to the user
+    /// @param identityCommitment: Identity commitment of the user.
+    function registerUser(uint256 identityCommitment) external;
+
+    /// @dev creates a poll and adds the users to it as voters from their wallet addresses
+    /// @param coordinator: Address of the poll coordinator.
+    /// @param endTimeStamp: Timestamp of the end of the poll.
+    /// @param title: Title of the poll.
+    /// @param options: Options of the poll.
+    /// @param VotersAddresses: Addresses of the voters.
+    /// TODO: add a check to see if the user is already registered because if not it's identity commitment will be registered with the default value of 0
+    function createPollWithUsers(
         address coordinator,
-        uint256 merkleTreeDepth,
         uint256 endTimeStamp,
         string calldata title,
-        string[] calldata options
+        string[] calldata options,
+        address[] calldata VotersAddresses
     ) external;
 
-    /// @dev Adds a voter to a poll.
-    /// @param pollId: Id of the poll.
-    /// @param identityCommitment: Identity commitment of the group member.
-    function addVoter(uint256 pollId, uint256 identityCommitment) external;
+    /// @dev gets the data of all the polls the user is participating in
+    /// @param identityCommitment: Identity commitment of the user.
+    function getUserPolls(uint256 identityCommitment)
+        external
+        returns (
+            uint256[] memory,
+            string[] memory,
+            uint256[] memory,
+            uint256[] memory
+        );
 
-    /// @dev Starts a pull and publishes the key to encrypt the votes.
+    /// @dev Gets the poll results.
     /// @param pollId: Id of the poll.
-    function startPoll(uint256 pollId) external;
+    function getPollResults(uint256 pollId)
+        external
+        returns (string[] memory, uint256[] memory);
 
     /// @dev Casts an anonymous vote in a poll.
     /// @param vote: Encrypted vote.
@@ -92,22 +120,61 @@ interface ISolidVoting {
         uint256 pollId,
         uint256[8] calldata proof
     ) external;
-
-    /// @dev Ends a pull and publishes the key to decrypt the votes.
-    /// @param pollId: Id of the poll.
-    function endPoll(uint256 pollId) external;
 }
 
+
+
+// |----------------------------------------------------------------------------------------------|
+// |||||||||||||||||||||||||||||||||||| SolidVotes Contract |||||||||||||||||||||||||||||||||||||||
+// |----------------------------------------------------------------------------------------------|
+
+
+
 contract SolidVotes is ISolidVoting, SemaphoreGroups {
+
     /// @dev Initializes the Semaphore verifier used to verify the user's ZK proofs.
-    ISemaphoreVerifier public verifier = ISemaphoreVerifier(0x66e772B0B8Ee1c24E4b6aC99A3A82C77f431792E);
+    ISemaphoreVerifier public verifier =
+        ISemaphoreVerifier(0x66e772B0B8Ee1c24E4b6aC99A3A82C77f431792E);
 
 
-    // ||||||||||||||||||||||||||||||| VOTING PART |||||||||||||||||||||||||||||||||||||||
+
+    // |----------------------------------------------------------------------------------------------|
+    // |||||||||||||||||||||||||||||||||||| JUST SOME MATH ||||||||||||||||||||||||||||||||||||||||||||
+    // |----------------------------------------------------------------------------------------------|
+
+
+
+    function ceilLog2(uint256 x) internal pure returns (uint256) {
+        require(x > 0, "Input must be greater than 0");
+        if (x == 1) {
+            return 0;
+        } else {
+            uint256 lo = 0;
+            uint256 hi = 256;
+            uint256 mid;
+            while (lo < hi) {
+                mid = (lo + hi) / 2;
+                if (2**mid >= x) {
+                    hi = mid;
+                } else {
+                    lo = mid + 1;
+                }
+            }
+            return hi;
+        }
+    }
+
+
+
+    // |----------------------------------------------------------------------------------------------|
+    // ||||||||||||||||||||||||||||||||||| INTERNAL VOTING PART |||||||||||||||||||||||||||||||||||||||
+    // |----------------------------------------------------------------------------------------------|
+
 
 
     /// Gets a poll id and returns the poll data.
     mapping(uint256 => Poll) internal polls;
+    uint256[] public pollsIds;
 
     /// @dev Checks if the poll coordinator is the transaction sender.
     /// @param pollId: Id of the poll.
@@ -118,11 +185,12 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
         _;
     }
 
-    modifier pollEnded(uint256 pollId) {
+    modifier IsPollEnded(uint256 pollId) {
         if (block.timestamp >= polls[pollId].endTimeStamp) {
             revert Semaphore__PollHasEnded();
         }
         polls[pollId].state = PollState.Ended;
+        emit PollEnded(pollId, polls[pollId].coordinator);
         _;
     }
 
@@ -134,7 +202,7 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
         uint256 endTimeStamp,
         string calldata title,
         string[] calldata options
-    ) public override PollEnded(pollId) {
+    ) internal IsPollEnded(pollId) {
         if (merkleTreeDepth < 16 || merkleTreeDepth > 32) {
             revert Semaphore__MerkleTreeDepthIsNotSupported();
         }
@@ -147,9 +215,8 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
         polls[pollId].title = title;
         for (uint256 i = 0; i < options.length; i++) {
             polls[pollId].options.push(options[i]);
-            polls[pollId].votesPerOption[options[i]] = 0;
+            polls[pollId].votesPerOption[i] = 0;
         }
-
 
         emit PollCreated(pollId, coordinator);
 
@@ -159,11 +226,15 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
 
         polls[pollId].state = PollState.Ongoing;
 
-        emit PollStarted(pollId, _msgSender());
+        emit PollStarted(pollId, _msgSender(), endTimeStamp);
     }
 
     /// @dev See {ISolidVoting-addVoter}.
-    function addVoter(uint256 pollId, uint256 identityCommitment) public override onlyCoordinator(pollId) PollEnded(pollId) {
+    function addVoter(uint256 pollId, uint256 identityCommitment)
+        internal
+        onlyCoordinator(pollId)
+        IsPollEnded(pollId)
+    {
         if (polls[pollId].state != PollState.Created) {
             revert Semaphore__PollHasAlreadyBeenStarted();
         }
@@ -174,67 +245,27 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
     /// @dev add multiple voters to a poll
     /// @param pollId: Id of the poll.
     /// @param identityCommitments: Identity commitments of the voters.
-    function addVoters(uint256 pollId, uint256[] calldata identityCommitments) external {
+    function addVoters(uint256 pollId, uint256[] calldata identityCommitments)
+        internal
+    {
         for (uint256 i = 0; i < identityCommitments.length; i++) {
             addVoter(pollId, identityCommitments[i]);
         }
     }
 
-    /// @dev See {ISolidVoting-castVote}.
-    function castVote(
-        uint256 vote,
-        uint256 nullifierHash,
-        uint256 pollId,
-        uint256[8] calldata proof
-    ) public override PollEnded(pollId) {
-        if (polls[pollId].state != PollState.Ongoing) {
-            revert Semaphore__PollIsNotOngoing();
-        }
 
-        if (polls[pollId].nullifierHashes[nullifierHash]) {
-            revert Semaphore__YouAreUsingTheSameNillifierTwice();
-        }
 
-        uint256 merkleTreeDepth = getMerkleTreeDepth(pollId);
-        uint256 merkleTreeRoot = getMerkleTreeRoot(pollId);
+    // |----------------------------------------------------------------------------------------------|
+    // |||||||||||||||||||||||||||||||| USERS INTERACTING PART ||||||||||||||||||||||||||||||||||||||||
+    // |----------------------------------------------------------------------------------------------|
 
-        verifier.verifyProof(merkleTreeRoot, nullifierHash, vote, pollId, proof, merkleTreeDepth);
 
-        polls[pollId].nullifierHashes[nullifierHash] = true;
-        polls[pollId].votesPerOption[polls[pollId].options[vote]] += 1;
-        
-        emit VoteAdded(pollId, vote);
-    }
-
-    /// @dev See {ISolidVoting-publishDecryptionKey}.
-    // function endPoll(uint256 pollId, uint256 decryptionKey) public override onlyCoordinator(pollId) {
-    //     if (polls[pollId].state != PollState.Ongoing) {
-    //         revert Semaphore__PollIsNotOngoing();
-    //     }
-
-    //     polls[pollId].state = PollState.Ended;
-
-    //     emit PollEnded(pollId, _msgSender());
-    // }
-
-    /// @dev Gets the poll results.
-    /// @param pollId: Id of the poll.
-    function getPollResults(uint256 pollId) public view pollEnded returns (uint256[] memory) {
-        uint256[] memory results = new uint256[](polls[pollId].options.length);
-        for (uint256 i = 0; i < polls[pollId].options.length; i++) {
-            results[i] = polls[pollId].votesPerOption[polls[pollId].options[i]];
-        }
-        return results;
-    }
-
-    // ||||||||||||||||||||||||||||||| USERS PART |||||||||||||||||||||||||||||||||||||||
 
     /// @dev Gets the user's identity commitment.
     mapping(address => uint256) public users;
 
     /// @dev Gets all the polls the user(commitment) is currently participating in.
     mapping(uint256 => uint256[]) public userPolls;
-
 
     /// @dev check if user identity commitment is connected to the right user address
     modifier onlyUser(uint256 identityCommitment) {
@@ -250,17 +281,85 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
         users[_msgSender()] = identityCommitment;
     }
 
-    /// @dev gets the data of all the polls the user is participating in
-    /// @param identityCommitment: Identity commitment of the user.
-    function getUserPolls(uint256 identityCommitment) public view onlyUser(identityCommitment) returns (Poll[] memory) {
-        uint256[] memory pollsIds = userPolls[identityCommitment];
-        Poll[] memory pollsData = new Poll[](pollsIds.length);
-
-        for (uint256 i = 0; i < pollsIds.length; i++) {
-            pollsData[i] = polls[pollsIds[i]];
+    /// @dev See {ISolidVoting-castVote}.
+    function castVote(
+        uint256 vote,
+        uint256 nullifierHash,
+        uint256 pollId,
+        uint256[8] calldata proof
+    ) public override IsPollEnded(pollId) {
+        if (polls[pollId].state != PollState.Ongoing) {
+            revert Semaphore__PollIsNotOngoing();
         }
 
-        return pollsData;
+        if (polls[pollId].nullifierHashes[nullifierHash]) {
+            revert Semaphore__YouAreUsingTheSameNillifierTwice();
+        }
+
+        uint256 merkleTreeDepth = getMerkleTreeDepth(pollId);
+        uint256 merkleTreeRoot = getMerkleTreeRoot(pollId);
+
+        verifier.verifyProof(
+            merkleTreeRoot,
+            nullifierHash,
+            vote,
+            pollId,
+            proof,
+            merkleTreeDepth
+        );
+
+        polls[pollId].nullifierHashes[nullifierHash] = true;
+        polls[pollId].votesPerOption[vote] += 1;
+
+        emit VoteAdded(pollId, vote);
+    }
+
+    /// @dev gets the data of all the polls the user is participating in
+    /// @param identityCommitment: Identity commitment of the user.
+    function getUserPolls(uint256 identityCommitment)
+        public
+        override
+        onlyUser(identityCommitment)
+        returns (
+            uint256[] memory,
+            string[] memory,
+            uint256[] memory,
+            uint256[] memory
+        )
+    {
+        uint256[] memory UserPollsIds = userPolls[identityCommitment];
+        string[] memory titles = new string[](pollsIds.length);
+        uint256[] memory endTimes = new uint256[](pollsIds.length);
+        uint256[] memory states = new uint256[](pollsIds.length);
+
+        for (uint256 i = 0; i < UserPollsIds.length; i++) {
+            titles[i] = polls[UserPollsIds[i]].title;
+            endTimes[i] = polls[UserPollsIds[i]].endTimeStamp;
+            if (polls[UserPollsIds[i]].state == PollState.Ongoing) {
+                if (polls[UserPollsIds[i]].endTimeStamp < block.timestamp) {
+                    polls[UserPollsIds[i]].state = PollState.Ended;
+                }
+            }
+            states[i] = uint256(polls[UserPollsIds[i]].state);
+        }
+
+        return (UserPollsIds, titles, states, endTimes);
+    }
+
+    /// @dev Gets the poll results.
+    /// @param pollId: Id of the poll.
+    function getPollResults(uint256 pollId)
+        public
+        override
+        IsPollEnded(pollId)
+        returns (string[] memory, uint256[] memory)
+    {
+        string[] memory options = polls[pollId].options;
+        uint256[] memory votesPerOption = new uint256[](options.length);
+        for (uint256 i = 0; i < options.length; i++) {
+            votesPerOption[i] = polls[pollId].votesPerOption[i];
+        }
+        return (options, votesPerOption);
     }
 
     /// @dev creates a poll and adds the users to it as voters from their wallet addresses
@@ -276,11 +375,33 @@ contract SolidVotes is ISolidVoting, SemaphoreGroups {
         string calldata title,
         string[] calldata options,
         address[] calldata VotersAddresses
-    ) external {
-        uint256 pollId = createPoll(coordinator, endTimeStamp, title, options);
+    ) public override {
+        require(VotersAddresses.length > 0, "Invalid input");
+        uint256 _merkleTreeDepth = ceilLog2(VotersAddresses.length);
+        require(_merkleTreeDepth <= 32, "Merkle tree depth is too big");
+        if (_merkleTreeDepth < 16) {
+            _merkleTreeDepth = 16;
+        }
+        require(endTimeStamp > block.timestamp, "Invalid input");
+        require(options.length > 1, "Invalid input");
+        require(bytes(title).length > 0, "Invalid input");
+        require(coordinator != address(0), "Invalid input");
+        if (pollsIds.length == 0) {
+            pollsIds.push(0);
+        }
+        uint256 _pollId = pollsIds[pollsIds.length - 1] + 1;
+        pollsIds.push(_pollId);
+        createPoll(
+            _pollId,
+            coordinator,
+            _merkleTreeDepth,
+            endTimeStamp,
+            title,
+            options
+        );
 
         for (uint256 i = 0; i < VotersAddresses.length; i++) {
-            addVoter(pollId, users[VotersAddresses[i]]);
+            addVoter(_pollId, users[VotersAddresses[i]]);
         }
     }
 }
